@@ -82,14 +82,12 @@ typedef enum {
 }grasp_cmd;
 
 
-uint32_t cable_data[10];
-uint32_t old_cable_data[10];
-
 int open_i2c(uint8_t addr);
 int set_grip(grasp_cmd grip_idx, uint8_t speed);
 int set_mode(uint8_t mode);
 int send_recieve_floats(uint8_t mode, float_format_i2c * out, float_format_i2c * in, uint8_t * disabled_stat, pres_union_fmt_i2c * pres_fmt);
 int send_enable_word(uint8_t enable_command);
+void delay(int milliseconds);
 //int send_recieve_floats(uint8_t mode, float_format_i2c * out, float_format_i2c * in, pres_union_fmt_i2c * pres_fmt);
 
 

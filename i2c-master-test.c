@@ -128,7 +128,7 @@ int send_enable_word(uint8_t enable_command)
 			confirm = 1;
 
 		attempts++;
-		if(attempts > 300)	//Kludged timeout
+		if(attempts > 450)	//Kludged timeout
 		{
 			confirm = 1;	//break out of loop with an error message
 			ret |= (1 << 2);
@@ -136,4 +136,14 @@ int send_enable_word(uint8_t enable_command)
 	}
 
 	return ret;
+}
+
+void delay(int milliseconds)
+{
+    long pause;
+    clock_t now,then;
+    pause = milliseconds*(CLOCKS_PER_SEC/1000);
+    now = then = clock();
+    while( (now-then) < pause )
+        now = clock();
 }

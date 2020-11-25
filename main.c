@@ -18,13 +18,18 @@ float current_time_sec(struct timeval * tv)
 int main()
 {
 	FILE *log; //log file init of file and cleaning
-	log = fopen("log.txt","a");
-	fclose(log);
-	for (int i=0; i<10; ++i){
-		old_cable_data[i]=0;
-	}
 	time_t now;
 	int clock, secsPastMidnight, hours, minutes, seconds;
+	log = fopen("log.txt","a");
+	time(&now);
+			clock = now - 18000;
+			secsPastMidnight = clock % 86400;
+		hours = (secsPastMidnight / 3600)-1;
+			minutes = (secsPastMidnight % 3600) / 60;
+			seconds = secsPastMidnight % 60;
+	fprintf(log, "%02d:%02d:%02d Beginning of the test \n", hours, minutes, seconds);
+	printf("%02d:%02d:%02d Beginning of the test \n", hours, minutes, seconds);
+	fclose(log);
 
 	open_i2c(0x50);	//Initialize the I2C port. Currently default setting is 100kHz clock rate
 
@@ -52,48 +57,67 @@ int main()
 		connect_flag[cnt]=1;
 	int prev_phase = 0;
 	int phase = 0;
+	uint32_t cable_data[10];
+	uint32_t old_cable_data[10];
+	uint32_t gl_fall_diff = 0;
+	uint32_t gl_rise_diff = 0;
+	for (int i=0; i<10; ++i){
+		cable_data[i]=0;
+		old_cable_data[i]=0;
+	}
 
 	/*Setup for demo motion*/
 	uint8_t disabled_stat = 0;
 
 	float q_stop[NUM_CHANNELS] = {0};
-	float qd[NUM_CHANNELS] = {0};
+	float qd[NUM_CHANNELS] = {5.f, 5.f, 5.f, 5.f, 5.f, 0.f};
 	qd[THUMB_ROTATOR] = -80.f;
+
 
 	float start_ts = current_time_sec(&tv);
 	while(1)
 	{
-		float t = fmod(current_time_sec(&tv) - start_ts, 10);
-		if(t >= 1 && t < 2)
+		float t = fmod(current_time_sec(&tv) - start_ts, 5);
+		if (t<1){
+			state=0;
+			for(int ch = 0; ch <= PINKY; ch++)
+				qd[ch] = q_stop[ch];			//enforce start position
+			qd[THUMB_FLEXOR] = 10.f;		//for both sets of fingers
+		}
+		if (t>2 && t <3) state = 2;
+
+		if(t >=1 && t <=2)
 		{	state = 1;
 			phase = 1;
 			float t_off = t-1.f;
 			for(int ch = 0; ch <= PINKY; ch++)
-				qd[ch] = t_off*50.f + 20.f;	//travel to 70 degrees (close) from 20 degrees (open)
+			//	qd[ch] = t_off*75.f;	//travel to 70 degrees (close) from 20 degrees (open)
+				qd [ch] = 150.f*sin(t_off*3.14159/2) + 5.f;
+			//	qd[ch]=50.f*(.5f*sin(3*t_off+(float)(5-ch)*3.1415f/6)+.5f) + 10.f;
 			qd[THUMB_FLEXOR] = t_off*30.f+10.f; //travel to 40 degrees (close) from 10 degrees (open)
-
-			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-				q_stop[ch] = i2c_in.v[ch];	//record so when phase 1 is complete you know where the hand stopped
 		}
 
-		else if(t >= 6 && t < 7)
+		else if(t >= 3 && t <= 4)
 		{ state = 3;
-			phase = 2;
-			float t_off = (t-6.f);
+			float t_off = (t-3.f);
 			for(int ch = 0; ch <= PINKY; ch++)
-				qd[ch] = t_off*(20.f-q_stop[ch]) + q_stop[ch];	//travel to 20 from where you currently are
+			qd[ch] = 150.f*cos(t_off*3.14159/2)+5.f;	//travel to 20 from where you currently are
+				//qd[ch] = t_off*(20.f-q_stop[ch]) + q_stop[ch];	//travel to 20 from where you currently are
 			qd[THUMB_FLEXOR] = t_off*(10.f-q_stop[THUMB_FLEXOR])+q_stop[THUMB_FLEXOR];	//travel to 10 from where you currently are
+			for(int ch = 0; ch < NUM_CHANNELS; ch++)
+        q_stop[ch] = i2c_in.v[ch];	//record so when phase 1 is complete you know where the hand stopped
 		}
-		else if(t > 7)
+		else if(t > 4)
 		{	phase = 3;
 			for(int ch = 0; ch <= PINKY; ch++)
-				qd[ch] = 20.f;			//enforce start position
+				qd[ch] = 5.f;			//enforce start position
 			qd[THUMB_FLEXOR] = 10.f;		//for both sets of fingers
 			state = 0;
 		}
 		else{
 			phase = -1;
 		}
+
 
 		if(prev_phase != phase && prev_phase == -1)
 		{
@@ -102,9 +126,6 @@ int main()
 		}
 
 		prev_phase = phase;
-
-		if (t<1) state = 0;
-		if (t>=2 && t <6) state = 2;
 		/*
 		Pressure Indices:
 		Index: 	0-3
@@ -115,18 +136,36 @@ int main()
 		*/
 
 		#ifdef CABLE_TEST
-			
+
 			int i, pidx;
 			for(pidx = 0; pidx < 19; pidx+=2){
 					cable_data[pidx/2]=((uint32_t)pres_fmt.v[pidx+1] << 16) +  pres_fmt.v[pidx];
-//					printf("%x ", cable_data[pidx/2]);
+				//	printf("%x ", cable_data[pidx/2]);
 			}
-//			printf("\n");
+		//	printf("\n");
 
-			for (i= 0; i <10; i+=2){
+			for (i = 4; i <5; i+=2){
 					int finger = i/2;
+					gl_fall_diff = cable_data[i]-old_cable_data[i];
+					gl_rise_diff = cable_data[i+1]-old_cable_data[i+1];
+					if (gl_fall_diff>0x1000 || gl_rise_diff> 0x1000)
+					  {//printf("Glitch");
 
-					if ((cable_data[i]>old_cable_data[i])&&connect_flag[finger]==1){
+						old_cable_data[i] = cable_data [i];
+						old_cable_data[i+1] = cable_data[i+1];
+						gl_fall_diff = cable_data[i]-old_cable_data[i];
+						gl_rise_diff = cable_data[i+1]-old_cable_data[i+1];}
+
+					// else if (gl_fall_diff!=0 || gl_rise_diff!=0){
+					// 	printf("Fall %d\n", gl_fall_diff);
+					// 	printf("Rise %d\n", gl_rise_diff);
+					// 	old_cable_data[i] = cable_data [i];
+					// 	old_cable_data[i+1] = cable_data[i+1];
+					// 	gl_fall_diff = cable_data[i]-old_cable_data[i];
+					// 	gl_rise_diff = cable_data[i+1]-old_cable_data[i+1];
+					// }
+
+					if (gl_fall_diff>0&&connect_flag[finger]==1){
 						time(&now);
 	    					clock = now - 18000;
 	    					secsPastMidnight = clock % 86400;
@@ -138,21 +177,26 @@ int main()
 				 		fprintf(log, "%02d:%02d:%02d ", hours, minutes, seconds);
 				 		if (state==1)
 				 		 {fprintf(log, "Finger %d disconnected during closing\n", finger+1);
-							printf("Finger %d disconnected during closing\n", finger+1);}
+							//printf("Finger %d disconnected during closing\n", finger+1);
+							}
 				 		else if (state==3)
 				 			{fprintf(log, "Finger %d disconnected during opening\n", finger+1);
-							printf("Finger %d disconnected during opening\n", finger+1);}
+							//printf("Finger %d disconnected during opening\n", finger+1);
+							}
 						else if (state==0)
 							{fprintf(log, "Finger %d disconnected while open \n", finger+1);
-							printf("Finger %d disconnected while open \n", finger+1);}
+							//printf("Finger %d disconnected while open \n", finger+1);
+							}
 						else
 						{fprintf(log, "Finger %d disconnected while closed \n", finger+1);
-						printf("Finger %d disconnected while closed \n", finger+1);}
+						//printf("Finger %d disconnected while closed \n", finger+1);
+						}
 				 		fclose(log);
 						old_cable_data[i]=cable_data[i];
 						old_cable_data[i+1]=cable_data[i+1];
 					}
-					else if ((cable_data[i+1]>old_cable_data[i+1])&&connect_flag[finger]==0){
+
+					else if (gl_rise_diff>0&&connect_flag[finger]==0){
 						connect_flag[finger] = 1;
 				 		log = fopen("log.txt","a");
 						time(&now);
@@ -164,20 +208,25 @@ int main()
 						fprintf(log, "%02d:%02d:%02d ", hours, minutes, seconds);
 				 		if (state==1)
 				 		 {fprintf(log, "Finger %d connected during closing\n", finger+1);
-							printf("Finger %d connected during closing\n", finger+1);}
+							//printf("Finger %d connected during closing\n", finger+1);
+							}
 				 		else if (state==3)
 				 			{fprintf(log, "Finger %d connected during opening\n", finger+1);
-							printf("Finger %d connected during opening\n", finger+1);}
+							//printf("Finger %d connected during opening\n", finger+1);
+							}
 						else if (state==0)
 							{fprintf(log, "Finger %d connected while open \n", finger+1);
-							printf("Finger %d connected while open \n", finger+1);}
+							//printf("Finger %d connected while open \n", finger+1);
+							}
 						else
 						{fprintf(log, "Finger %d connected while closed \n", finger+1);
-						printf("Finger %d connected while closed \n", finger+1);}
+						//printf("Finger %d connected while closed \n", finger+1);
+						}
  				 		fclose(log);
 						old_cable_data[i]=cable_data[i];
 						old_cable_data[i+1]=cable_data[i+1];
 					}
+
 			}
 
 		#endif
