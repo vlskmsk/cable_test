@@ -13,10 +13,9 @@ float current_time_sec(struct timeval * tv)
 	int64_t t_int = (tv->tv_sec*1000000+tv->tv_usec);
 	return ((float)t_int)/1000000.0f;
 }
-	int state;
 
 int main()
-{
+{	int state;
 	FILE *log; //log file init of file and cleaning
 	time_t now;
 	int clock, secsPastMidnight, hours, minutes, seconds;
@@ -25,6 +24,7 @@ int main()
 			clock = now - 18000;
 			secsPastMidnight = clock % 86400;
 		hours = (secsPastMidnight / 3600)-1;
+		if (hours == -1)	hours = 23;
 			minutes = (secsPastMidnight % 3600) / 60;
 			seconds = secsPastMidnight % 60;
 	fprintf(log, "%02d:%02d:%02d Beginning of the test \n", hours, minutes, seconds);
@@ -69,63 +69,65 @@ int main()
 	/*Setup for demo motion*/
 	uint8_t disabled_stat = 0;
 
-	float q_stop[NUM_CHANNELS] = {0};
-	float qd[NUM_CHANNELS] = {5.f, 5.f, 5.f, 5.f, 5.f, 0.f};
+	float q_stop[NUM_CHANNELS] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+	float qd[NUM_CHANNELS] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
 	qd[THUMB_ROTATOR] = -80.f;
 
 
 	float start_ts = current_time_sec(&tv);
 	while(1)
-	{
-		float t = fmod(current_time_sec(&tv) - start_ts, 5);
-		if (t<1){
-			state=0;
-			for(int ch = 0; ch <= PINKY; ch++)
-				qd[ch] = q_stop[ch];			//enforce start position
-			qd[THUMB_FLEXOR] = 10.f;		//for both sets of fingers
-		}
-		if (t>2 && t <3) state = 2;
+		{	float t = fmod(current_time_sec(&tv) - start_ts, 3);
+			if (abs(current_time_sec(&tv) - start_ts)==30.f)
+				start_ts = current_time_sec(&tv);
 
-		if(t >=1 && t <=2)
-		{	state = 1;
-			phase = 1;
-			float t_off = t-1.f;
-			for(int ch = 0; ch <= PINKY; ch++)
-			//	qd[ch] = t_off*75.f;	//travel to 70 degrees (close) from 20 degrees (open)
-				qd [ch] = 150.f*sin(t_off*3.14159/2) + 5.f;
-			//	qd[ch]=50.f*(.5f*sin(3*t_off+(float)(5-ch)*3.1415f/6)+.5f) + 10.f;
-			qd[THUMB_FLEXOR] = t_off*30.f+10.f; //travel to 40 degrees (close) from 10 degrees (open)
-		}
+				if (t<0.3){
+					state=0;
+					for(int ch = 0; ch <= PINKY; ch++)
+						qd[ch] = q_stop[ch];			//enforce start position
+					qd[THUMB_FLEXOR] = 10.f;		//for both sets of fingers
+				}
+				if (t>1.3 && t <1.5) state = 2;
 
-		else if(t >= 3 && t <= 4)
-		{ state = 3;
-			float t_off = (t-3.f);
-			for(int ch = 0; ch <= PINKY; ch++)
-			qd[ch] = 150.f*cos(t_off*3.14159/2)+5.f;	//travel to 20 from where you currently are
-				//qd[ch] = t_off*(20.f-q_stop[ch]) + q_stop[ch];	//travel to 20 from where you currently are
-			qd[THUMB_FLEXOR] = t_off*(10.f-q_stop[THUMB_FLEXOR])+q_stop[THUMB_FLEXOR];	//travel to 10 from where you currently are
-			for(int ch = 0; ch < NUM_CHANNELS; ch++)
-        q_stop[ch] = i2c_in.v[ch];	//record so when phase 1 is complete you know where the hand stopped
-		}
-		else if(t > 4)
-		{	phase = 3;
-			for(int ch = 0; ch <= PINKY; ch++)
-				qd[ch] = 5.f;			//enforce start position
-			qd[THUMB_FLEXOR] = 10.f;		//for both sets of fingers
-			state = 0;
-		}
-		else{
-			phase = -1;
-		}
+				if(t >=0.3 && t <=1.3)
+				{	state = 1;
+					phase = 1;
+					float t_off = t-0.3;
+					for(int ch = 0; ch <= PINKY; ch++)
+					//	qd[ch] = t_off*75.f;	//travel to 70 degrees (close) from 20 degrees (open)
+						qd [ch] = 150.f*sin(t_off*3.14159/2) + 5.f;
+					//	qd[ch]=50.f*(.5f*sin(3*t_off+(float)(5-ch)*3.1415f/6)+.5f) + 10.f;
+					qd[THUMB_FLEXOR] = t_off*30.f+10.f; //travel to 40 degrees (close) from 10 degrees (open)
+				}
+
+				else if(t >= 1.5 && t <= 2.5)
+				{ state = 3;
+					float t_off = (t-1.5);
+					for(int ch = 0; ch <= PINKY; ch++)
+					qd[ch] = 150.f*cos(t_off*3.14159/2)+5.f;	//travel to 20 from where you currently are
+						//qd[ch] = t_off*(20.f-q_stop[ch]) + q_stop[ch];	//travel to 20 from where you currently are
+					qd[THUMB_FLEXOR] = t_off*(10.f-q_stop[THUMB_FLEXOR])+q_stop[THUMB_FLEXOR];	//travel to 10 from where you currently are
+					for(int ch = 0; ch < NUM_CHANNELS; ch++)
+		        q_stop[ch] = i2c_in.v[ch];	//record so when phase 1 is complete you know where the hand stopped
+				}
+				else if(t > 2.5)
+				{	phase = 3;
+					for(int ch = 0; ch <= PINKY; ch++)
+						qd[ch] = 5.f;			//enforce start position
+					qd[THUMB_FLEXOR] = 10.f;		//for both sets of fingers
+					state = 0;
+				}
+				else{
+					phase = -1;
+				}
 
 
-		if(prev_phase != phase && prev_phase == -1)
-		{
-			//enable_cmd = 0x3f;
-			send_enable_word(0x3F);		//should call this only once for optimum behavior
-		}
+				if(prev_phase != phase && prev_phase == -1)
+				{
+					//enable_cmd = 0x3f;
+					send_enable_word(0x3F);		//should call this only once for optimum behavior
+				}
 
-		prev_phase = phase;
+				prev_phase = phase;
 		/*
 		Pressure Indices:
 		Index: 	0-3
@@ -170,6 +172,7 @@ int main()
 	    					clock = now - 18000;
 	    					secsPastMidnight = clock % 86400;
 	   					hours = (secsPastMidnight / 3600)-1;
+							if (hours == -1)	hours = 23;
 	    					minutes = (secsPastMidnight % 3600) / 60;
 	    					seconds = secsPastMidnight % 60;
 						connect_flag[finger] = 0;
@@ -203,6 +206,7 @@ int main()
 	    					clock = now - 18000;
 	   					secsPastMidnight = clock % 86400;
 	    					hours = (secsPastMidnight / 3600)-1;
+								if (hours == -1)	hours = 23;
 	    					minutes = (secsPastMidnight % 3600) / 60;
 	    					seconds = secsPastMidnight % 60;
 						fprintf(log, "%02d:%02d:%02d ", hours, minutes, seconds);

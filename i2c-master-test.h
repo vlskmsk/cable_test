@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <math.h>
+#include <stdlib.h>
 
 /*Various size defines for i2c communication*/
 #define NUM_CHANNELS 6
